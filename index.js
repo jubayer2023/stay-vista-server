@@ -106,6 +106,12 @@ async function run() {
       res.send(result)
     })
 
+    // get role of user
+    app.get('/user/:email', verifyToken, async (req, res) => {
+      const email = req.params.email;
+      const result = await usersCollection.findOne({ email: email });
+      res.send(result);
+    });
 
 
     // get all rooms 
@@ -114,8 +120,20 @@ async function run() {
       res.send(result);
     });
 
+    // get host rooms
+    app.get('/rooms/:email', verifyToken, async (req, res) => {
+      const email = req.params.email;
+      const query = {
+        'host.email': email
+      };
+
+      const result = await roomsCollection.find(query).toArray();
+      res.send(result);
+    });
+
+
     // get single room
-    app.get('/rooms/:id', async (req, res) => {
+    app.get('/room/:id', async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
 
