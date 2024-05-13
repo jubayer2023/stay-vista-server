@@ -7,6 +7,8 @@ const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const jwt = require('jsonwebtoken');
 const morgan = require('morgan');
 const port = process.env.PORT || 8000;
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
 
 // middleware
 const corsOptions = {
@@ -52,6 +54,7 @@ async function run() {
     const database = client.db('stayVistaDb');
     const usersCollection = database.collection('users');
     const roomsCollection = database.collection('rooms');
+    const bookingsCollection = database.collection('bookings');
 
 
 
@@ -60,7 +63,7 @@ async function run() {
       const user = req.body
       console.log('I need a new jwt', user)
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
-        expiresIn: '365d',
+        expiresIn: '24h',
       })
       res
         .cookie('token', token, {
@@ -153,22 +156,78 @@ async function run() {
 
 
 
+    // create payment intent
+    app.post('/create-payment-intent', verifyToken, async (req, res) => {
+      const { price } = req.body;
+      const amount = parseInt(price * 100);
+      if (!price || amount < 1) {
+        return res.status(400).send('no money !!!')
+      };
+      const { client_secret } = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: 'usd',
+        'payment_method_types': ['card'],
+      });
+
+      res.send({ clientSecret: client_secret });
+    });
 
 
+    // save bookings
+    app.post('/bookings', verifyToken, async (req, res) => {
+      const bookingInfo = req.body;
+      const result = await bookingsCollection.insertOne(bookingInfo);
+      res.send(result);
+    });
 
+    // update rooms
+    app.patch('/rooms/status/:id', async (req, res) => {
+      const id = req.params.id;
+      const status = req.body.status;
+      const query = { _id: new ObjectId(id) };
+      const updateDoc = {
+        $set: {
+          booked: status,
+        },
+      };
+      const result = await roomsCollection.updateOne(query, updateDoc);
+      res.send(result);
+    });
 
+    // get all bookings data for guest
+    app.get('/bookings', verifyToken, async (req, res) => {
+      const { email } = req.query;
+      if (!email) {
+        return res.send([]);
+      };
 
+      const query = { 'guest.email': email };
 
+      const result = await bookingsCollection.find(query).toArray();
+      res.send(result);
 
+    });
 
+    // get all bookings data for host
+    app.get('/bookings/host', verifyToken, async (req, res) => {
+      const { email } = req.query;
+      if (!email) {
+        return res.send([]);
+      };
 
+      const query = { host: email };
 
+      const result = await bookingsCollection.find(query).toArray();
+      res.send(result);
 
+    });
 
+    // get all users
     app.get('/users', async (req, res) => {
       const result = await usersCollection.find().toArray();
       res.send(result);
     })
+
 
     // Send a ping to confirm a successful connection
     await client.db('admin').command({ ping: 1 })
