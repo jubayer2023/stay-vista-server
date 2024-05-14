@@ -8,6 +8,7 @@ const jwt = require('jsonwebtoken');
 const morgan = require('morgan');
 const port = process.env.PORT || 8000;
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+let nodemailer = require("nodemailer");
 
 
 // middleware
@@ -37,6 +38,52 @@ const verifyToken = async (req, res, next) => {
     req.user = decoded
     next()
   })
+}
+
+
+// send email
+const sendEmail = (emailAddress, emailData) => {
+  // create a transporter
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false,
+    auth: {
+      user: process.env.APP_USER,
+      pass: process.env.APP_PASS,
+    }
+
+  });
+
+  // verify transporter
+  transporter.verify((error, success) => {
+    if (error) {
+      console.log(error)
+    }
+    if (success) {
+      console.log("success gmail: ", success)
+    }
+  });
+
+
+  const mailBody = {
+    from: process.env.APP_USER,
+    to: emailAddress,
+    subject: emailData?.subject,
+    html: `<P>${emailData?.message}</p>`
+  };
+
+  transporter.sendMail(mailBody, (error, info) => {
+    if (error) {
+      console.log(error)
+    }
+    if (info) {
+      console.log('Email sent : ', info.response)
+    }
+  })
+
+
 }
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.of0ix0q.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -210,6 +257,20 @@ async function run() {
     app.post('/bookings', verifyToken, async (req, res) => {
       const bookingInfo = req.body;
       const result = await bookingsCollection.insertOne(bookingInfo);
+      if (result?.insertedId) {
+        // send email to guest
+        sendEmail(bookingInfo?.guest?.email, {
+          subject: 'Booking Successful!',
+          message: `Room Ready, chole ashen vai, apnar Transaction Id: ${bookingInfo.transactionId}`,
+        })
+
+
+        // send email to host
+        sendEmail(bookingInfo?.host, {
+          subject: 'Booking Successful!',
+          message: `Room Ready, chole ashen vai, apnar Transaction Id: ${bookingInfo.transactionId}`,
+        })
+      }
       res.send(result);
     });
 
