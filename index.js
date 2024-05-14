@@ -57,6 +57,32 @@ async function run() {
     const bookingsCollection = database.collection('bookings');
 
 
+    // verify admins
+    const verifyAdmin = async (req, res, next) => {
+      const user = req.user;
+      const query = { email: user?.email };
+      const result = await usersCollection.findOne(query);
+      if (!result || result?.role !== 'admin') {
+        return res.status(401).send({ message: "Unauthorized" });
+      }
+      else {
+        next();
+      }
+    };
+    // verify hosts
+    const verifyHost = async (req, res, next) => {
+      const user = req.user;
+      const query = { email: user?.email };
+      const result = await usersCollection.findOne(query);
+      if (!result || result?.role !== 'host') {
+        return res.status(401).send({ message: "Unauthorized" });
+      }
+      else {
+        next();
+      }
+    };
+
+
 
     // auth related api
     app.post('/jwt', async (req, res) => {
@@ -98,7 +124,14 @@ async function run() {
       const options = { upsert: true }
       const isExist = await usersCollection.findOne(query)
       console.log('User found?----->', isExist)
-      if (isExist) return res.send(isExist)
+      if (isExist) {
+        if (user?.status === 'Requested') {
+          const result = await usersCollection.updateOne(query, { $set: user }, options);
+          return res.send(result);
+        } else {
+          return res.send({ message: 'exist' });
+        }
+      };
       const result = await usersCollection.updateOne(
         query,
         {
@@ -118,13 +151,13 @@ async function run() {
 
 
     // get all rooms 
-    app.get('/rooms', async (req, res) => {
+    app.get('/rooms', verifyToken, async (req, res) => {
       const result = await roomsCollection.find().toArray();
       res.send(result);
     });
 
     // get host rooms
-    app.get('/rooms/:email', verifyToken, async (req, res) => {
+    app.get('/rooms/:email', verifyToken, verifyHost, async (req, res) => {
       const email = req.params.email;
       const query = {
         'host.email': email
@@ -145,7 +178,7 @@ async function run() {
     });
 
     // add room data
-    app.post('/rooms', verifyToken, async (req, res) => {
+    app.post('/rooms', verifyToken, verifyHost, async (req, res) => {
       const data = req.body;
       const result = await roomsCollection.insertOne(data);
       res.send(result);
@@ -209,7 +242,7 @@ async function run() {
     });
 
     // get all bookings data for host
-    app.get('/bookings/host', verifyToken, async (req, res) => {
+    app.get('/bookings/host', verifyToken, verifyHost, async (req, res) => {
       const { email } = req.query;
       if (!email) {
         return res.send([]);
@@ -223,14 +256,14 @@ async function run() {
     });
 
     // get all users
-    app.get('/users', async (req, res) => {
+    app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
       const result = await usersCollection.find().toArray();
       res.send(result);
     })
 
 
     // update user role
-    app.put('/users/update/:email', async (req, res) => {
+    app.put('/users/update/:email', verifyToken, verifyAdmin, async (req, res) => {
       const email = req.params.email;
       const user = req.body;
       const query = { email: email };
